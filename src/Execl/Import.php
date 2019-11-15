@@ -259,10 +259,10 @@ class Import
         for ($sheet_count = 0; $sheet_count < $this->sheet_count; $sheet_count++) {
             $currentSheet = $this->PHPExcel->getSheet($sheet_count);
             $all_data = $this->getRowData($currentSheet);
+            $data = ['data' => $all_data];
             $title && $data['title'] = $currentSheet->getTitle();
             $hide_column && $data['hide_column'] = $this->getVisible($currentSheet);
             $therd && $data['therd'] = $this->getThead($currentSheet);
-            $data = ['data' => $all_data];
             $sheet[] = $data;
         }
         return $sheet;
