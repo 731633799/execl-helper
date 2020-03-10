@@ -1,27 +1,30 @@
 <?php
 /**
+ * Import class
  * Created by PhpStorm.
  * Author: DoubleY
  * Date: 2019/11/12
  * Time: 10:22
  * Email: 731633799@qq.com
+ * PHPExecl 导入自定义处理
  */
-
 namespace Tdy\Execl;
 
 class Import
 {
 
-    public $PHPExcel = null;
-    public $sheet_count = 0;
-    private $thead_row = 1;
+    private $PHPExcel = null;
+    private $sheet_count = 0;
+    private $column2lower = true;
+    private $thead_row = 0;
     private $max_column = null;
     private $max_row = null;
     private $hide_column = [];
-    public $column2lower = true;
     private $thead_data = [];
     private $field = null;
     private $fieldAlias = null;
+    private $imageData = [];
+    private $imagePath = false;
 
     /**
      * PhpExecl 导入处理
@@ -104,29 +107,17 @@ class Import
         return $this;
     }
 
-
-    /**获取execl隐藏的具体字段
-     * @param null $currentSheet
-     * @return array
+    /**
+     * 设置图片本地保存路径
+     * @param String $path
+     * @return $this
      */
-    public function getVisible($currentSheet = null)
+    public function setImagePath($path)
     {
-        $currentSheet = $currentSheet ? $currentSheet : $this->PHPExcel->getSheet(0);
-        $maxColumn = !$this->max_column ? $currentSheet->getHighestDataColumn() : $this->max_column;
-        for ($currentRow = 1; $currentRow < 2; $currentRow++) {
-            if ($this->field) {
-                for ($currentColumn = 0; $currentColumn < count($this->field); $currentColumn++) {
-                    $colName = $this->number2column($currentColumn);
-                    !$currentSheet->getColumnDimension($colName)->getVisible() && $this->hide_column[] = $this->aliasField($colName);
-                }
-            } else {
-                for ($currentColumn = 0; $currentColumn < $this->column2number($maxColumn); $currentColumn++) {
-                    $colName = $this->number2column($currentColumn);
-                    !$currentSheet->getColumnDimension($colName)->getVisible() && $this->hide_column[] = $this->aliasField($colName);
-                }
-            }
+        if (is_bool($path) || is_string($path)) {
+            $path && $this->imagePath = $path;
         }
-        return $this->hide_column;
+        return $this;
     }
 
     /**
@@ -147,39 +138,6 @@ class Import
         return \PHPExcel_Cell::stringFromColumnIndex($number);
     }
 
-    /**
-     * @param null $currentSheet
-     * @param string $callback 回调函数
-     * @return array
-     */
-    private function getRowData($currentSheet = null, $callback = 'default_value')
-    {
-        $currentSheet = $currentSheet ? $currentSheet : $this->PHPExcel->getSheet(0);
-        $maxColumn = !$this->max_column ? $currentSheet->getHighestDataColumn() : $this->max_column;      //获取A-X最大的列号
-        $maxRow = !$this->max_row ? $currentSheet->getHighestRow() : $this->max_row;                      //取得一共有多少行数据
-        $currentRow_int = 1;
-        $this->thead_data && $currentRow_int = $this->thead_row + 1;
-        $this->thead_data && $this->max_row && $maxRow = $maxRow + $this->thead_row;
-        $this->thead_data && !$this->max_row && $maxRow = $maxRow - $this->thead_row;
-        $all_data = [];
-        for ($currentRow = $currentRow_int; $currentRow <= $maxRow; $currentRow++) {
-            $arr = [];
-            if ($this->field) {
-                for ($currentColumn = 0; $currentColumn < count($this->field); $currentColumn++) {
-                    $cell = $currentSheet->getCell(strtoupper($this->field[$currentColumn]) . $currentRow);
-                    $arr[$this->aliasField($this->field[$currentColumn])] = (string)$this->$callback($cell);
-                }
-            } else {
-                for ($currentColumn = 0; $currentColumn < $this->column2number($maxColumn); $currentColumn++) {
-                    $colName = $this->number2column($currentColumn);
-                    $cell = $currentSheet->getCell($colName . $currentRow);
-                    $arr[$this->aliasField($colName)] = (string)$this->$callback($cell);;
-                }
-            }
-            $all_data[] = $arr;
-        }
-        return $all_data;
-    }
 
     /**
      * 设置键名
@@ -198,73 +156,160 @@ class Import
         return $this->column2lower ? strtolower($colName) : $colName;
     }
 
-
-    /**
-     * 处理获取的execl 单元格内容
-     * @param $cell
-     * @return string
-     */
-    private function default_value($cell)
+    /*处理图片
+    *@param String $savePath  保存路径  为空时返回资源路径
+    *@return array
+    */
+    private function handleImage($sheet_index = 0, $savePath = null)
     {
-        $val = $cell->getFormattedValue();
-        if ($val instanceof \PHPExcel_RichText) {
-            $val = $val->getPlainText();
-        }
-        return $val;
-    }
-
-
-    /**
-     * 获取exexel 表格头部
-     * @param null $currentSheet
-     * @param string $callback
-     * @return array
-     */
-    public function getThead($currentSheet = null, $callback = "default_value")
-    {
-        $currentSheet = $currentSheet ? $currentSheet : $this->PHPExcel->getSheet(0);
-        $all_data = [];
-        for ($currentRow = 1; $currentRow <= $this->thead_row; $currentRow++) {
-            $arr = [];
-            if ($this->field) {
-                for ($currentColumn = 0; $currentColumn < count($this->field); $currentColumn++) {
-                    $cell = $currentSheet->getCell(strtoupper($this->field[$currentColumn]) . $currentRow);
-                    $arr[$this->aliasField($this->field[$currentColumn])] = $this->$callback($cell);
+        $imageData = [];
+        $currentSheet = $this->PHPExcel->getSheet($sheet_index);
+        foreach ($currentSheet->getDrawingCollection() as $k => $image) {
+            $codata = $image->getCoordinates();
+            $temp_file = $image->getPath();
+            if ($savePath) {
+                @mkdir($savePath, 0777, true);
+                $imgFile = $savePath . md5_file($temp_file) . '.' . $image->getExtension();
+                if (!file_exists($imgFile)) {
+                    copy($temp_file, $imgFile);
                 }
             } else {
-                $maxColumn = !$this->max_column ? $currentSheet->getHighestDataColumn() : $this->max_column;
-                !is_numeric($maxColumn) && $maxColumn = $this->column2number($maxColumn);
-                for ($currentColumn = 0; $currentColumn < $maxColumn; $currentColumn++) {
-                    $colName = $this->number2column($currentColumn);
-                    $cell = $currentSheet->getCell($colName . $currentRow);
-                    $arr[$this->aliasField($colName)] = $this->$callback($cell);;
-                }
+                $imgFile = $temp_file;
+            }
+            $imageData[$codata][] = $imgFile;
+        }
+        $this->imageData[$sheet_index] = $imageData;
+        return $imageData;
+    }
+
+    /** 获取execl隐藏的具体字段
+     * @param int $sheet_index
+     * @return array
+     */
+    private function handleVisible($sheet_index = 0)
+    {
+        $currentSheet = $this->PHPExcel->getSheet($sheet_index);
+        $arr = [];
+        if ($this->field) {      //只读取每行指定字段
+            for ($currentColumn = 0; $currentColumn < count($this->field); $currentColumn++) {
+                $colName = strtoupper($this->field[$currentColumn]);
+                !$currentSheet->getColumnDimension($colName)->getVisible() && $arr[] = $this->aliasField($this->field[$currentColumn]);
+            }
+        } else {
+            for ($currentColumn = 0; $currentColumn < 1; $currentColumn++) {
+                $colName = $this->number2column($currentColumn);
+                !$currentSheet->getColumnDimension($colName)->getVisible() && $arr[] = $this->aliasField($this->field[$currentColumn]);
+            }
+        }
+        $this->hide_column[$sheet_index] = $arr;
+        return $arr;
+    }
+
+    /**
+     * 处理当前表格数据
+     * @param null $currentSheet index or 当前对象
+     * @param string $callback 回调函数
+     * @return array
+     */
+    private function handelRowData($sheet_index = 0)
+    {
+        $currentSheet = $this->PHPExcel->getSheet($sheet_index);
+        $maxRow = $this->max_row ? $this->max_row + $this->thead_row : $currentSheet->getHighestRow();  //取得一共有多少行数据
+        if (is_bool($this->imagePath)) {                                      //图片处理
+            $this->imagePath == true && $this->handleImage($sheet_index);
+        } else {
+            $this->imagePath && $this->handleImage($sheet_index, $this->imagePath);
+        }
+        $all_data = [];
+        for ($currentRow = 1; $currentRow <= $maxRow; $currentRow++) {         //每行
+            $arr = $this->handelColData($sheet_index, $currentRow);            //获取每一列具体内容
+            if ($this->thead_row >= 1 && $currentRow <= $this->thead_row) {    //设置表头数据
+                $temp = &$this->thead_data;
+                $temp[$sheet_index][] = $arr;
+                continue;
             }
             $all_data[] = $arr;
         }
-        $this->thead_data = $all_data;
         return $all_data;
     }
 
+    /*处理每列具体字段的内容
+    *@param int $sheet_index   表格索引
+    *@param int $currentRow    指定的行号
+    *@param function $callback 回调函数
+    */
+    private function handelColData($sheet_index, $currentRow, $callback = 'default_value')
+    {
+        $currentSheet = $this->PHPExcel->getSheet($sheet_index);
+        $arr = [];
+        if ($this->field) {//只读取每行指定字段
+            for ($currentColumn = 0; $currentColumn < count($this->field); $currentColumn++) {
+                $cell = $currentSheet->getCell(strtoupper($this->field[$currentColumn]) . $currentRow);
+                $arr[$this->aliasField($this->field[$currentColumn])] =  $this->$callback($cell, $sheet_index);
+            }
+        } else {
+            $maxColumn = !$this->max_column ? $currentSheet->getHighestDataColumn() : $this->max_column; //获取A-X最大的列号
+            for ($currentColumn = 0; $currentColumn < $this->column2number($maxColumn); $currentColumn++) {
+                $colName = $this->number2column($currentColumn);
+                $cell = $currentSheet->getCell($colName . $currentRow);
+                $arr[$this->aliasField($colName)] = $this->$callback($cell, $sheet_index);
+            }
+        }
+        return $arr;
+    }
+
     /**
-     * 获取全部execl   配合 getThead 方法返回值会有所不同
+     * 处理获取的Execl 单元格内容
+     * @param $cell
+     * @return
+     */
+    private function default_value($cell, $sheet_index = 0)
+    {
+        $row_content = $cell->getFormattedValue();
+        if ($row_content instanceof \PHPExcel_RichText) {
+            $row_content = (string)$row_content->getPlainText();
+        }
+        if (isset($this->imageData[$sheet_index][$cell->getCoordinate()])) {
+            $arr_img = $this->imageData[$sheet_index][$cell->getCoordinate()];
+            $content_array = array_pad(stristr($row_content, ",") ? explode(",", $row_content) : explode("，", $row_content), count($arr_img), null);
+            $row_content = array_map(function ($file, $title) {
+                return compact('file', 'title');
+            }, $arr_img, $content_array);
+        }
+        return $row_content;
+    }
+
+    /**
+     * 获取全部execl数据   配合 setThead_row方法,返回值会有所不同
      * @param bool $title
-     * @param bool $hide_column
      * @param bool $therd
+     * @param bool $hide_column
      * @return array
      */
-    public function getData($title = false, $hide_column = false, $therd = false)
+    public function getData($title = false, $therd = false, $hide_column = false)
     {
         $sheet = [];
         for ($sheet_count = 0; $sheet_count < $this->sheet_count; $sheet_count++) {
             $currentSheet = $this->PHPExcel->getSheet($sheet_count);
-            $all_data = $this->getRowData($currentSheet);
-            $data = ['data' => $all_data];
-            $title && $data['title'] = $currentSheet->getTitle();
-            $hide_column && $data['hide_column'] = $this->getVisible($currentSheet);
-            $therd && $data['therd'] = $this->getThead($currentSheet);
+            $all_data = $this->handelRowData($sheet_count);
+            $merge = [];
+            $title && $merge['title'] = $currentSheet->getTitle();
+            $hide_column && $merge['hide_column'] = $this->handleVisible($sheet_count);
+            $therd && $merge['therd'] = $this->thead_data[$sheet_count];
+            $data = (!$title && !$therd && !$hide_column) ? $all_data : array_merge($merge, ['data' => $all_data]);
             $sheet[] = $data;
         }
         return $sheet;
     }
+
+    public function __get($name)
+    {
+        if(isset($this->$name)){
+            return $this->$name;
+        }else{
+            return null;
+        }
+    }
+
+
 }
