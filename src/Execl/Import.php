@@ -25,7 +25,7 @@ class Import
     private $fieldAlias = null;
     private $imageData = [];
     private $imagePath = false;
-
+    private $returnImgPath = '';
     /**
      * PhpExecl 导入处理
      * import constructor.
@@ -112,11 +112,12 @@ class Import
      * @param String $path
      * @return $this
      */
-    public function setImagePath($path)
+    public function setImagePath($path,$return_path='')
     {
         if (is_bool($path) || is_string($path)) {
             $path && $this->imagePath = $path;
         }
+        $this->returnImgPath=$return_path;
         return $this;
     }
 
@@ -169,10 +170,12 @@ class Import
             $temp_file = $image->getPath();
             if ($savePath) {
                 @mkdir($savePath, 0777, true);
-                $imgFile = $savePath . md5_file($temp_file) . '.' . $image->getExtension();
+                $file_name=md5_file($temp_file) . '.' . $image->getExtension();
+                $imgFile = $savePath . $file_name;
                 if (!file_exists($imgFile)) {
                     copy($temp_file, $imgFile);
                 }
+                $this->returnImgPath && $imgFile= $this->returnImgPath.$file_name;
             } else {
                 $imgFile = $temp_file;
             }
